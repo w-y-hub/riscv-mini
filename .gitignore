@@ -31,3 +31,25 @@ tests/64/*
 novas_dump.log
 ucli.key
 
+riscv-tools/
+riscv-tools-priv1.7-prebuilt/
+cv32-unknown-elf-gcc
+custom-bmark/*.o
+custom-bmark/*.hex
+custom-bmark/*.dump
+custom-bmark/main
+custom-bmark/~*
+outputs/
+*.vcd
+run.log
+riscv-tools/
+riscv-tools-priv1.7-prebuilt/
+cv32-unknown-elf-gcc
+custom-bmark/*.o
+custom-bmark/*.hex
+custom-bmark/*.dump
+custom-bmark/main
+custom-bmark/~*
+outputs/
+*.vcd
+run.log

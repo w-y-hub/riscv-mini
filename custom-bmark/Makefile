@@ -4,7 +4,7 @@ base_dir = $(abspath ..)
 RISCV_TEST_DIR     ?= $(base_dir)/riscv-tools-priv1.7/riscv-tests
 CUSTOM_BMARK_BIN   ?= main
 CUSTOM_BMARK_C_SRC ?= main.c syscalls.c
-CUSTOM_BMARK_S_SRC ?= add.S crt.S
+CUSTOM_BMARK_S_SRC ?= fib.S crt.S
 
 CUSTOM_BMARK_OBJS := \
 	$(foreach f,$(CUSTOM_BMARK_C_SRC),$(patsubst %.c,%.o,$f)) \
@@ -15,7 +15,7 @@ riscv_bmark_dir = $(RISCV_TEST_DIR)/benchmarks
 RISCV_GCC     = riscv32-unknown-elf-gcc
 RISCV_CFLAGS  = -static -std=gnu99 -fno-common -fno-builtin-printf \
 	-I$(RISCV_TEST_DIR)/env -I$(RISCV_TEST_DIR)/benchmarks/common
-RISCV_LDFLAGS = -T $(RISCV_TEST_DIR)/benchmarks/common/test.ld \
+RISCV_LDFLAGS = -T test.ld \
 	-I$(RISCV_TEST_DIR)/env -I$(RISCV_TEST_DIR)/benchmarks/common
 
 VPATH += $(RISCV_TEST_DIR)/benchmarks/common 
