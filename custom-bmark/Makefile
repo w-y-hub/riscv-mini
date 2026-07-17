@@ -4,7 +4,7 @@ base_dir = $(abspath ..)
 RISCV_TEST_DIR     ?= $(base_dir)/riscv-tools-priv1.7/riscv-tests
 CUSTOM_BMARK_BIN   ?= main
 CUSTOM_BMARK_C_SRC ?= main.c syscalls.c
-CUSTOM_BMARK_S_SRC ?= fib.S crt.S
+CUSTOM_BMARK_S_SRC ?= matrix_mul.S crt.S
 
 CUSTOM_BMARK_OBJS := \
 	$(foreach f,$(CUSTOM_BMARK_C_SRC),$(patsubst %.c,%.o,$f)) \
