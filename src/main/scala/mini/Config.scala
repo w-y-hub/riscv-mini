@@ -17,7 +17,7 @@ object MiniConfig {
         makeImmGen = new ImmGenWire(_)
       ),
       cache = CacheConfig(
-        nWays = 1,
+        nWays = 2,
         nSets = 256,
         blockBytes = 4 * (xlen / 8) // 4 * 32 bits = 16B
       ),

@@ -1,5 +1,3 @@
-// See LICENSE for license details.
-
 package mini
 
 import chisel3._
@@ -40,6 +38,7 @@ object CacheState extends ChiselEnum {
 class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int) extends Module {
   // local parameters
   val nSets = p.nSets
+  val nWays = p.nWays
   val bBytes = p.blockBytes
   val bBits = bBytes << 3
   val blen = log2Ceil(bBytes)
@@ -55,15 +54,20 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   // cache states
   import CacheState._
   val state = RegInit(sIdle)
+
   // memory
-  val v = RegInit(0.U(nSets.W))
-  val d = RegInit(0.U(nSets.W))
-  val metaMem = SyncReadMem(nSets, new MetaData(tlen))
-  val dataMem = Seq.fill(nWords)(SyncReadMem(nSets, Vec(wBytes, UInt(8.W))))
+  val v = RegInit(VecInit(Seq.fill(nWays)(0.U(nSets.W))))  // 每组每路各 1 个 valid
+  val d = RegInit(VecInit(Seq.fill(nWays)(0.U(nSets.W))))  // 每组每路各 1 个 dirty
+  val metaMem = Seq.fill(nWays)(SyncReadMem(nSets, new MetaData(tlen)))   // 每路各 1 个 tag SRAM
+  val dataMem = Seq.fill(nWays)(Seq.fill(nWords)(SyncReadMem(nSets, Vec(wBytes, UInt(8.W))))) // [FIX] 补全括号
 
   val addr_reg = Reg(chiselTypeOf(io.cpu.req.bits.addr))
   val cpu_data = Reg(chiselTypeOf(io.cpu.req.bits.data))
   val cpu_mask = Reg(chiselTypeOf(io.cpu.req.bits.mask))
+
+  // [FIX] 将 lru 提前到 alloc_way 之前
+  // 替换策略 伪LRU算法，每组维护一位访问记录
+  val lru = RegInit(VecInit(Seq.fill(nSets)(0.U(1.W)))) // 0表示路0最近使用，1表示路1最近使用
 
   // Counters
   require(dataBeats > 0)
@@ -78,7 +82,9 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
 
   val hit = Wire(Bool())
   val wen = is_write && (hit || is_alloc_reg) && !io.cpu.abort || is_alloc
-  val ren = !wen && (is_idle || is_read) && io.cpu.req.valid
+  //将捕获条件改为使用一个统一的 miss 信号，该信号在 读或写 miss 时都有效
+  val miss = !hit && (is_idle || is_read || is_write) && io.cpu.req.valid
+  val ren = (!wen || miss) && (is_idle || is_read || is_write) && io.cpu.req.valid
   val ren_reg = RegNext(ren)
 
   val addr = io.cpu.req.bits.addr
@@ -87,17 +93,66 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   val idx_reg = addr_reg(slen + blen - 1, blen)
   val off_reg = addr_reg(blen - 1, byteOffsetBits)
 
-  val rmeta = metaMem.read(idx, ren)
-  val rdata = Cat((dataMem.map(_.read(idx, ren).asUInt)).reverse)
-  val rdata_buf = RegEnable(rdata, ren_reg)
+  // 分别读两路的tag和数据（组合输出）
+  val rmeta0 = metaMem(0).read(idx, ren)
+  val rmeta1 = metaMem(1).read(idx, ren)
+  val rdata0 = Cat((dataMem(0).map(_.read(idx, ren).asUInt)).reverse)
+  val rdata1 = Cat((dataMem(1).map(_.read(idx, ren).asUInt)).reverse)
+
+  // 读数据缓冲
+  val rdata0_buf = RegEnable(rdata0, ren_reg)
+  val rdata1_buf = RegEnable(rdata1, ren_reg)
   val refill_buf = Reg(Vec(dataBeats, UInt(nasti.dataBits.W)))
-  val read = Mux(is_alloc_reg, refill_buf.asUInt, Mux(ren_reg, rdata, rdata_buf))
 
-  hit := v(idx_reg) && rmeta.tag === tag_reg
+  // 命中判断
+  val hit0 = v(0)(idx_reg) && rmeta0.tag === tag_reg
+  val hit1 = v(1)(idx_reg) && rmeta1.tag === tag_reg
+  hit := hit0 || hit1
+  val hit_way = Mux(hit0, 0.U, 1.U) // 命中路选择
 
-  // Read Mux
-  io.cpu.resp.bits.data := VecInit.tabulate(nWords)(i => read((i + 1) * xlen - 1, i * xlen))(off_reg)
-  io.cpu.resp.valid := is_idle || is_read && hit || is_alloc_reg && !cpu_mask.orR
+  // [FIX] 重新组织 alloc_way 的计算，避免组合循环
+  // 缺失时选择最近未使用的 way 替换
+  val victim_way = Mux(lru(idx_reg) === 0.U, 1.U, 0.U)  // 当前 LRU 标志指示的 victim way
+  val alloc_way = Mux(hit, hit_way, victim_way)           // 实际写入的 way
+
+  // [FIX] LRU 更新逻辑，与 alloc_way 同步更新，但不相互依赖
+  when(io.cpu.req.valid) {
+    when(hit) {
+      lru(idx_reg) := hit_way      // 命中时标记命中 way 为最近使用
+    }.otherwise {
+      lru(idx_reg) := victim_way   // 缺失时标记 victim way 为最近使用（即刚被替换的 way）
+    }
+  }
+
+  // 被选中替换的 way
+  val evict_way = alloc_way
+  // 被替换 way 的脏位
+  val is_dirty_way0 = v(0)(idx_reg) && d(0)(idx_reg)
+  val is_dirty_way1 = v(1)(idx_reg) && d(1)(idx_reg)
+  val is_dirty = Mux(evict_way === 0.U, is_dirty_way0, is_dirty_way1)
+
+  // 写回数据（被替换 way 的数据块）
+  val evict_data = Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
+
+  //为了避免变量evict未声明使用的问题，将该函数移动到此处
+  // 锁存被替换 way 的 tag 和数据（用于写回）
+  val evict_tag_reg = RegEnable(
+    Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag),
+    miss
+  )
+  val evict_data_reg = RegEnable(
+    Mux(evict_way === 0.U, rdata0, rdata1),
+    miss
+  )
+
+  // Read Mux：从命中 way 或 refill 数据中取数
+  val read0 = Mux(is_alloc_reg, refill_buf.asUInt, Mux(ren_reg, rdata0, rdata0_buf))
+  val read1 = Mux(is_alloc_reg, refill_buf.asUInt, Mux(ren_reg, rdata1, rdata1_buf))
+  val way_read = Mux(hit_way === 0.U, read0, read1)
+  io.cpu.resp.bits.data := VecInit.tabulate(nWords)(i => way_read((i + 1) * xlen - 1, i * xlen))(off_reg)
+
+  // [FIX] 去除 is_idle，避免过早响应
+  io.cpu.resp.valid := is_read && hit || is_alloc_reg && !cpu_mask.orR
 
   when(io.cpu.resp.valid) {
     addr_reg := addr
@@ -115,20 +170,39 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
     if (refill_buf.size == 1) io.nasti.r.bits.data
     else Cat(io.nasti.r.bits.data, Cat(refill_buf.init.reverse))
   )
+
+  // 写入 cache（仅写选中的 way）
   when(wen) {
-    v := v.bitSet(idx_reg, true.B)
-    d := d.bitSet(idx_reg, !is_alloc)
-    when(is_alloc) {
-      metaMem.write(idx_reg, wmeta)
-    }
-    dataMem.zipWithIndex.foreach {
-      case (mem, i) =>
-        val data = VecInit.tabulate(wBytes)(k => wdata(i * xlen + (k + 1) * 8 - 1, i * xlen + k * 8))
-        mem.write(idx_reg, data, wmask((i + 1) * wBytes - 1, i * wBytes).asBools)
-        mem.suggestName(s"dataMem_${i}")
+    when(alloc_way === 0.U) {
+      v(0) := v(0).bitSet(idx_reg, true.B)
+      d(0) := d(0).bitSet(idx_reg, !is_alloc)
+      when(is_alloc) {
+        metaMem(0).write(idx_reg, wmeta)
+      }
+      dataMem(0).zipWithIndex.foreach {
+        case (mem, i) =>
+          val data = VecInit.tabulate(wBytes)(k =>
+            wdata(i * xlen + (k + 1) * 8 - 1, i * xlen + k * 8))
+          mem.write(idx_reg, data, wmask((i + 1) * wBytes - 1, i * wBytes).asBools)
+          // mem.suggestName(s"dataMem_0_${i}") // 可选，两路会重名，去掉或加不同前缀
+      }
+    }.otherwise {
+      v(1) := v(1).bitSet(idx_reg, true.B)
+      d(1) := d(1).bitSet(idx_reg, !is_alloc)
+      when(is_alloc) {
+        metaMem(1).write(idx_reg, wmeta)
+      }
+      dataMem(1).zipWithIndex.foreach {
+        case (mem, i) =>
+          val data = VecInit.tabulate(wBytes)(k =>
+            wdata(i * xlen + (k + 1) * 8 - 1, i * xlen + k * 8))
+          mem.write(idx_reg, data, wmask((i + 1) * wBytes - 1, i * wBytes).asBools)
+          // mem.suggestName(s"dataMem_1_${i}")
+      }
     }
   }
 
+  // AXI read address
   io.nasti.ar.bits := NastiAddressBundle(nasti)(
     0.U,
     (Cat(tag_reg, idx_reg) << blen.U).asUInt,
@@ -136,32 +210,32 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
     (dataBeats - 1).U
   )
   io.nasti.ar.valid := false.B
-  // read data
   io.nasti.r.ready := state === sRefill
   when(io.nasti.r.fire) {
     refill_buf(read_count) := io.nasti.r.bits.data
   }
 
-  // write addr
+  // 写回地址：使用锁存的 evict_tag_reg
   io.nasti.aw.bits := NastiAddressBundle(nasti)(
     0.U,
-    (Cat(rmeta.tag, idx_reg) << blen.U).asUInt,
+    (Cat(evict_tag_reg, idx_reg) << blen.U).asUInt,
     log2Up(nasti.dataBits / 8).U,
     (dataBeats - 1).U
   )
   io.nasti.aw.valid := false.B
-  // write data
+
+  // 写回数据：使用锁存的 evict_data_reg
   io.nasti.w.bits := NastiWriteDataBundle(nasti)(
-    VecInit.tabulate(dataBeats)(i => read((i + 1) * nasti.dataBits - 1, i * nasti.dataBits))(write_count),
+    VecInit.tabulate(dataBeats)(i => evict_data_reg((i + 1) * nasti.dataBits - 1, i * nasti.dataBits))(write_count),
     None,
     write_wrap_out
   )
   io.nasti.w.valid := false.B
-  // write resp
+
+  // AXI write response
   io.nasti.b.ready := false.B
 
   // Cache FSM
-  val is_dirty = v(idx_reg) && d(idx_reg)
   switch(state) {
     is(sIdle) {
       when(io.cpu.req.valid) {
