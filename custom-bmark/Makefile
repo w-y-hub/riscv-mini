@@ -29,7 +29,7 @@ all: $(CUSTOM_BMARK_BIN) $(CUSTOM_BMARK_BIN).hex $(CUSTOM_BMARK_BIN).dump
 	$(RISCV_GCC) $(RISCV_CFLAGS) -D__ASSEMBLY__=1 -c -o $@ $<
 
 $(CUSTOM_BMARK_BIN): $(CUSTOM_BMARK_OBJS)
-	$(RISCV_GCC) $(RISCV_LDFLAGS) -o $@ $^ -nostdlib -nostartfiles -lc -lgcc
+	$(RISCV_GCC) $(RISCV_LDFLAGS) -o $@ $^ -nostdlib -nostartfiles -lgcc
 
 %.hex: %
 	elf2hex 16 32768 $< > $@

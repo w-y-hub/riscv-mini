@@ -21,7 +21,7 @@ CXXFLAGS += -std=c++14 -Wall -Wno-unused-variable
 
 # compile verilator
 VERILATOR = verilator --cc --exe
-VERILATOR_FLAGS = --assert -Wno-STMTDLY -O3 --trace --threads $(threads)\
+VERILATOR_FLAGS = --assert -Wno-STMTDLY -O3 --threads $(threads)\
 	--top-module Tile -Mdir $(gen_dir)/VTile.csrc \
 	-CFLAGS "$(CXXFLAGS) -include $(gen_dir)/VTile.csrc/VTile.h" 
 

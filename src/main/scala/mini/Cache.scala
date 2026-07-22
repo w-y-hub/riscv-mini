@@ -32,7 +32,7 @@ class MetaData(tagLength: Int) extends Bundle {
 }
 
 object CacheState extends ChiselEnum {
-  val sIdle, sReadCache, sWriteCache, sWriteBack, sWriteAck, sRefillReady, sRefill = Value
+  val sIdle, sReadCache, sWriteCache, sEvict, sWriteBack, sWriteAck, sRefillReady, sRefill = Value
 }
 
 class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int) extends Module {
@@ -84,7 +84,7 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   val wen = is_write && (hit || is_alloc_reg) && !io.cpu.abort || is_alloc
   //将捕获条件改为使用一个统一的 miss 信号，该信号在 读或写 miss 时都有效
   val miss = !hit && (is_idle || is_read || is_write) && io.cpu.req.valid
-  val ren = (!wen || miss) && (is_idle || is_read || is_write) && io.cpu.req.valid
+  val ren = (!wen || miss) && (is_idle || is_read) && io.cpu.req.valid
   val ren_reg = RegNext(ren)
 
   val addr = io.cpu.req.bits.addr
@@ -108,19 +108,19 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   val hit0 = v(0)(idx_reg) && rmeta0.tag === tag_reg
   val hit1 = v(1)(idx_reg) && rmeta1.tag === tag_reg
   hit := hit0 || hit1
-  val hit_way = Mux(hit0, 0.U, 1.U) // 命中路选择
+  val hit_way = Mux(hit0, 0.U, Mux(hit1, 1.U, 0.U)) // 命中路选择
 
   // [FIX] 重新组织 alloc_way 的计算，避免组合循环
   // 缺失时选择最近未使用的 way 替换
-  val victim_way = Mux(lru(idx_reg) === 0.U, 1.U, 0.U)  // 当前 LRU 标志指示的 victim way
+  val victim_way = Mux(!v(0)(idx_reg), 0.U, Mux(!v(1)(idx_reg), 1.U, Mux(lru(idx_reg) === 0.U, 1.U, 0.U)))  // 优先选无效路，都有效再用 LRU
   val alloc_way = Mux(hit, hit_way, victim_way)           // 实际写入的 way
 
   // [FIX] LRU 更新逻辑，与 alloc_way 同步更新，但不相互依赖
   when(io.cpu.req.valid) {
     when(hit) {
-      lru(idx_reg) := hit_way      // 命中时标记命中 way 为最近使用
+      lru(idx) := hit_way      // 命中时标记命中 way 为最近使用
     }.otherwise {
-      lru(idx_reg) := victim_way   // 缺失时标记 victim way 为最近使用（即刚被替换的 way）
+      lru(idx) := victim_way   // 缺失时标记 victim way 为最近使用（即刚被替换的 way）
     }
   }
 
@@ -134,16 +134,13 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   // 写回数据（被替换 way 的数据块）
   val evict_data = Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
 
-  //为了避免变量evict未声明使用的问题，将该函数移动到此处
-  // 锁存被替换 way 的 tag 和数据（用于写回）
-  val evict_tag_reg = RegEnable(
-    Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag),
-    miss
-  )
-  val evict_data_reg = RegEnable(
-    Mux(evict_way === 0.U, rdata0, rdata1),
-    miss
-  )
+  // 锁存被替换 way 的 tag、数据和 way 号（用于写回）
+  val evict_tag_reg = Reg(UInt(tlen.W))
+  val evict_data_reg = Reg(UInt(bBits.W))
+  val evict_way_reg = Reg(UInt(1.W))
+
+  // 实际写入的 way：refill 后合并 store 时复用锁存的 way，避免重新求值不一致
+  val write_way = Mux(is_alloc_reg, evict_way_reg, alloc_way)
 
   // Read Mux：从命中 way 或 refill 数据中取数
   val read0 = Mux(is_alloc_reg, refill_buf.asUInt, Mux(ren_reg, rdata0, rdata0_buf))
@@ -152,9 +149,9 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   io.cpu.resp.bits.data := VecInit.tabulate(nWords)(i => way_read((i + 1) * xlen - 1, i * xlen))(off_reg)
 
   // [FIX] 去除 is_idle，避免过早响应
-  io.cpu.resp.valid := is_read && hit || is_alloc_reg && !cpu_mask.orR
+  io.cpu.resp.valid := is_idle || (is_read && hit) || (is_alloc_reg && !cpu_mask.orR)
 
-  when(io.cpu.resp.valid) {
+  when(io.cpu.req.valid) {
     addr_reg := addr
     cpu_data := io.cpu.req.bits.data
     cpu_mask := io.cpu.req.bits.mask
@@ -173,7 +170,7 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
 
   // 写入 cache（仅写选中的 way）
   when(wen) {
-    when(alloc_way === 0.U) {
+    when(write_way === 0.U) {
       v(0) := v(0).bitSet(idx_reg, true.B)
       d(0) := d(0).bitSet(idx_reg, !is_alloc)
       when(is_alloc) {
@@ -249,12 +246,14 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
         }.otherwise {
           state := sIdle
         }
+      }.elsewhen(miss && is_dirty) {
+        evict_tag_reg := Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag)
+        evict_data_reg := Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
+        evict_way_reg := evict_way
+        state := sEvict
       }.otherwise {
-        io.nasti.aw.valid := is_dirty
-        io.nasti.ar.valid := !is_dirty
-        when(io.nasti.aw.fire) {
-          state := sWriteBack
-        }.elsewhen(io.nasti.ar.fire) {
+        io.nasti.ar.valid := true.B
+        when(io.nasti.ar.fire) {
           state := sRefill
         }
       }
@@ -262,14 +261,22 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
     is(sWriteCache) {
       when(hit || is_alloc_reg || io.cpu.abort) {
         state := sIdle
+      }.elsewhen(miss && is_dirty) {
+        evict_tag_reg := Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag)
+        evict_data_reg := Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
+        evict_way_reg := evict_way
+        state := sEvict
       }.otherwise {
-        io.nasti.aw.valid := is_dirty
-        io.nasti.ar.valid := !is_dirty
-        when(io.nasti.aw.fire) {
-          state := sWriteBack
-        }.elsewhen(io.nasti.ar.fire) {
+        io.nasti.ar.valid := true.B
+        when(io.nasti.ar.fire) {
           state := sRefill
         }
+      }
+    }
+    is(sEvict) {
+      io.nasti.aw.valid := true.B
+      when(io.nasti.aw.fire) {
+        state := sWriteBack
       }
     }
     is(sWriteBack) {
