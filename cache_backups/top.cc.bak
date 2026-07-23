@@ -120,25 +120,8 @@ int main(int argc, char** argv) {
          << " (cycle " << main_time / 10 << ")"<< endl;
     return EXIT_FAILURE;
   } else {
-    unsigned long long total_cycles = main_time / 2;  // each tick is half-cycle
-    unsigned long long instret = top->io_perf_instret;
-    double cpi = (instret > 0) ? (double)total_cycles / instret : 0.0;
     cerr << "Simulation completed at time " << main_time <<
-           " (cycle " << total_cycles << ")"<< endl;
-    cerr << "=== Performance Counters ===" << endl;
-    cerr << "  Total Cycles:  " << total_cycles << endl;
-    cerr << "  Instructions:  " << instret << endl;
-    cerr << "  CPI:           " << cpi << endl;
-    cerr << "  I$ Access:     " << (unsigned int)top->io_perf_icache_access << endl;
-    cerr << "  I$ Miss:       " << (unsigned int)top->io_perf_icache_miss << endl;
-    cerr << "  I$ Miss Rate:  " << ((top->io_perf_icache_access > 0) ? 
-         (double)top->io_perf_icache_miss / top->io_perf_icache_access * 100.0 : 0.0) << "%" << endl;
-    cerr << "  I$ Stall:      " << (unsigned int)top->io_perf_icache_stall << endl;
-    cerr << "  D$ Access:     " << (unsigned int)top->io_perf_dcache_access << endl;
-    cerr << "  D$ Miss:       " << (unsigned int)top->io_perf_dcache_miss << endl;
-    cerr << "  D$ Miss Rate:  " << ((top->io_perf_dcache_access > 0) ? 
-         (double)top->io_perf_dcache_miss / top->io_perf_dcache_access * 100.0 : 0.0) << "%" << endl;
-    cerr << "  D$ Stall:      " << (unsigned int)top->io_perf_dcache_stall << endl;
+           " (cycle " << main_time / 10 << ")"<< endl;
     if (retcode) {
       cerr << "TOHOST = " << retcode << endl;
     }

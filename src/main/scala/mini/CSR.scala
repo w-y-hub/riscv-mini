@@ -116,6 +116,7 @@ class CSRIO(xlen: Int) extends Bundle {
   val epc = Output(UInt(xlen.W))
   // HTIF
   val host = new HostIO(xlen)
+  val perf_instret = Output(UInt(xlen.W))
 }
 
 class CSR(val xlen: Int) extends Module {
@@ -262,6 +263,8 @@ class CSR(val xlen: Int) extends Module {
   val isInstRet = io.inst =/= Instructions.NOP && (!io.expt || isEcall || isEbreak) && !io.stall
   when(isInstRet) { instret := instret + 1.U }
   when(isInstRet && instret.andR) { instreth := instreth + 1.U }
+
+  io.perf_instret := instret
 
   when(!io.stall) {
     when(io.expt) {

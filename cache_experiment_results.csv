@@ -1,0 +1,4 @@
+name,nWays,nSets,blockBytes,benchmark,total_cycles,instructions,cpi,icache_access,icache_miss,icache_miss_rate,icache_stall,dcache_access,dcache_miss,dcache_miss_rate,dcache_stall
+c1_2w256s16b,2,256,16,median.riscv.hex,70743,40809,1.73351,0,0,0.0,0,0,0,0.0,0
+c1_2w256s16b,2,256,16,multiply.riscv.hex,55676,42150,1.3209,0,0,0.0,0,0,0,0.0,0
+c1_2w256s16b,2,256,16,qsort.riscv.hex,27219,17448,1.56001,0,0,0.0,0,0,0,0.0,0

@@ -1,0 +1,11 @@
+benchmark,config,capacity,total_cycles,instructions,cpi,icache_access,icache_miss,icache_miss_rate,icache_stall,dcache_access,dcache_miss,dcache_miss_rate,dcache_stall,status
+median,baseline(2w512s16b),16KB,68052,41001,1.66,4703,98,2.08,60769,16313,1035,6.34,18900,PASS
+multiply,baseline(2w512s16b),16KB,55676,42150,1.32,402,93,23.13,55052,709,93,13.12,932,PASS
+qsort,baseline(2w512s16b),16KB,27220,17448,1.56,1931,108,5.59,24972,5763,148,2.57,6078,PASS
+matrix_mul_N4,baseline(2w512s16b),16KB,3055,2339,1.31,120,36,30.0,2882,310,18,5.81,364,PASS
+matrix_mul_N8,baseline(2w512s16b),16KB,19487,15791,1.23,360,36,10.0,18966,1686,54,3.20,1848,PASS
+matrix_mul_N16,baseline(2w512s16b),16KB,141213,116649,1.21,1322,34,2.57,139295,10774,198,1.84,11368,PASS
+matrix_mul_N16,c3(2w256s32b),16KB,141108,116649,1.21,1309,16,1.22,139294,10774,100,0.93,11274,PASS
+matrix_mul_N16,c1(2w256s16b),8KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT
+matrix_mul_N16,c4(2w256s8b),4KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT
+matrix_mul_N16,c5(2w128s16b),4KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT

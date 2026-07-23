@@ -1,9 +1,9 @@
 base_dir = $(abspath ..)
 TOOLS     = $(base_dir)/riscv-tools-priv1.7-prebuilt
 
-CUSTOM_BMARK_BIN   ?= main
-CUSTOM_BMARK_C_SRC ?= main.c syscalls.c
-CUSTOM_BMARK_S_SRC ?= matrix_mul.S crt.S
+CUSTOM_BMARK_BIN   ?= main_small
+CUSTOM_BMARK_C_SRC ?= main_small.c syscalls.c
+CUSTOM_BMARK_S_SRC ?= matrix_mul_small.S crt.S
 
 CUSTOM_BMARK_OBJS := \
 	$(foreach f,$(CUSTOM_BMARK_C_SRC),$(patsubst %.c,%.o,$f)) \

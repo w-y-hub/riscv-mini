@@ -1,0 +1,6 @@
+name,nWays,nSets,blockBytes,capacity,total_cycles,instructions,cpi,icache_access,icache_miss,icache_miss_rate,icache_stall,dcache_access,dcache_miss,dcache_miss_rate,dcache_stall,status,note
+c2_2w512s16b,2,512,16,16KB,141213,116649,1.21,1322,34,2.57,139295,10774,198,1.84,11368,PASS,正常完成
+c3_2w256s32b,2,256,32,16KB,141108,116649,1.21,1309,16,1.22,139294,10774,100,0.93,11274,PASS,32B块I$/D$ Miss均降低约50%
+c1_2w256s16b,2,256,16,8KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT,5000万cycle仍未完成,thrashing导致无法退出
+c4_2w256s8b,2,256,8,4KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT,5000万cycle仍未完成,容量严重不足
+c5_2w128s16b,2,128,16,4KB,50000000,-,-,-,-,-,-,-,-,-,-,TIMEOUT,5000万cycle仍未完成,容量严重不足

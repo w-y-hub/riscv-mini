@@ -96,14 +96,6 @@ class MemArbiter(params: NastiBundleParameters) extends Module {
 class TileIO(xlen: Int, nastiParams: NastiBundleParameters) extends Bundle {
   val host = new HostIO(xlen)
   val nasti = new NastiBundle(nastiParams)
-  // Performance counters
-  val perf_instret = Output(UInt(xlen.W))
-  val perf_icache_access = Output(UInt(32.W))
-  val perf_icache_miss = Output(UInt(32.W))
-  val perf_icache_stall = Output(UInt(32.W))
-  val perf_dcache_access = Output(UInt(32.W))
-  val perf_dcache_miss = Output(UInt(32.W))
-  val perf_dcache_stall = Output(UInt(32.W))
 }
 
 object Tile {
@@ -119,17 +111,9 @@ class Tile(val coreParams: CoreConfig, val nastiParams: NastiBundleParameters, v
   val arb = Module(new MemArbiter(nastiParams))
 
   io.host <> core.io.host
-  io.perf_instret := core.io.perf_instret
   core.io.icache <> icache.io.cpu
   core.io.dcache <> dcache.io.cpu
   arb.io.icache <> icache.io.nasti
   arb.io.dcache <> dcache.io.nasti
   io.nasti <> arb.io.nasti
-  // Wire cache performance counters
-  io.perf_icache_access := icache.io.perf.access
-  io.perf_icache_miss   := icache.io.perf.miss
-  io.perf_icache_stall  := icache.io.perf.stall
-  io.perf_dcache_access := dcache.io.perf.access
-  io.perf_dcache_miss   := dcache.io.perf.miss
-  io.perf_dcache_stall  := dcache.io.perf.stall
 }

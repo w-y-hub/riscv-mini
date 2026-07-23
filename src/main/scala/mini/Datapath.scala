@@ -16,6 +16,7 @@ class DatapathIO(xlen: Int) extends Bundle {
   val icache = Flipped(new CacheIO(xlen, xlen))
   val dcache = Flipped(new CacheIO(xlen, xlen))
   val ctrl = Flipped(new ControlSignals)
+  val perf_instret = Output(UInt(xlen.W))
 }
 
 class FetchExecutePipelineRegister(xlen: Int) extends Bundle {
@@ -191,6 +192,7 @@ class Datapath(val conf: CoreConfig) extends Module {
   csr.io.ld_type := ld_type
   csr.io.st_type := st_type
   io.host <> csr.io.host
+  io.perf_instret := csr.io.perf_instret
 
   // Regfile Write
   val regWrite =

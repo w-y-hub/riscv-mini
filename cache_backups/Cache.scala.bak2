@@ -20,17 +20,9 @@ class CacheIO(addrWidth: Int, dataWidth: Int) extends Bundle {
   val resp = Valid(new CacheResp(dataWidth))
 }
 
-
-class CachePerf extends Bundle {
-  val access = Output(UInt(32.W))
-  val miss   = Output(UInt(32.W))
-  val stall  = Output(UInt(32.W))
-}
-
 class CacheModuleIO(nastiParams: NastiBundleParameters, addrWidth: Int, dataWidth: Int) extends Bundle {
   val cpu = new CacheIO(addrWidth, dataWidth)
   val nasti = new NastiBundle(nastiParams)
-  val perf = new CachePerf
 }
 
 case class CacheConfig(nWays: Int, nSets: Int, blockBytes: Int)
@@ -62,11 +54,6 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
   // cache states
   import CacheState._
   val state = RegInit(sIdle)
-
-  // --- Performance Counter Registers ---
-  val access_cnt = RegInit(0.U(32.W))
-  val miss_cnt   = RegInit(0.U(32.W))
-  val stall_cnt  = RegInit(0.U(32.W))
 
   // memory
   val v = RegInit(VecInit(Seq.fill(nWays)(0.U(nSets.W))))  // 每组每路各 1 个 valid
@@ -260,13 +247,11 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
           state := sIdle
         }
       }.elsewhen(miss && is_dirty) {
-        miss_cnt := miss_cnt + 1.U
         evict_tag_reg := Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag)
         evict_data_reg := Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
         evict_way_reg := evict_way
         state := sEvict
       }.otherwise {
-        miss_cnt := miss_cnt + 1.U
         io.nasti.ar.valid := true.B
         when(io.nasti.ar.fire) {
           state := sRefill
@@ -277,13 +262,11 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
       when(hit || is_alloc_reg || io.cpu.abort) {
         state := sIdle
       }.elsewhen(miss && is_dirty) {
-        miss_cnt := miss_cnt + 1.U
         evict_tag_reg := Mux(evict_way === 0.U, rmeta0.tag, rmeta1.tag)
         evict_data_reg := Mux(evict_way === 0.U, rdata0_buf, rdata1_buf)
         evict_way_reg := evict_way
         state := sEvict
       }.otherwise {
-        miss_cnt := miss_cnt + 1.U
         io.nasti.ar.valid := true.B
         when(io.nasti.ar.fire) {
           state := sRefill
@@ -319,19 +302,5 @@ class Cache(val p: CacheConfig, val nasti: NastiBundleParameters, val xlen: Int)
         state := Mux(cpu_mask.orR, sWriteCache, sIdle)
       }
     }
-  }
-
-  // --- Performance Counter Logic ---
-  io.perf.access := access_cnt
-  io.perf.miss   := miss_cnt
-  io.perf.stall  := stall_cnt
-
-  // Count accesses (CPU requests when cache is idle)
-  when(is_idle && io.cpu.req.valid) {
-    access_cnt := access_cnt + 1.U
-  }
-  // Count stall cycles (non-idle states, i.e., cache is handling a request)
-  when(state =/= sIdle) {
-    stall_cnt := stall_cnt + 1.U
   }
 }

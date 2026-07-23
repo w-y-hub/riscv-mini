@@ -1,0 +1,6 @@
+name,nWays,nSets,blockBytes,capacity,total_cycles,instructions,cpi,icache_access,icache_miss,icache_miss_rate,icache_stall,dcache_access,dcache_miss,dcache_miss_rate,dcache_stall
+c1_2w256s16b,2,256,16,8KB,3055,2339,1.31,120,36,30.0,2882,310,18,5.81,364
+c2_2w512s16b,2,512,16,16KB,3055,2339,1.31,120,36,30.0,2882,310,18,5.81,364
+c3_2w256s32b,2,256,32,16KB,3038,2339,1.30,120,30,25.0,2885,310,14,4.52,360
+c4_2w256s8b,2,256,8,4KB,3083,2339,1.32,144,66,45.8,2882,310,30,9.68,370
+c5_2w128s16b,2,128,16,4KB,3055,2339,1.31,120,36,30.0,2882,310,18,5.81,364
